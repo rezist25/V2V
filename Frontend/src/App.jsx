@@ -1,15 +1,86 @@
 import { useState } from 'react'
+import { GoogleGenerativeAI as GoogleGenAI } from "@google/generative-ai"
 import './App.css'
 
 function App() {
-  const [videoFile, setVideoFile] = useState(null)
-  const [videoUrl, setVideoUrl] = useState(null)
+  // WARNING: In a production app, never store API keys in the frontend code.
+  const API_KEY = "AIzaSyCrnZjxBdfeJWjmahxrSmmV893_XZqui2Y";
+
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiInsights, setAiInsights] = useState(null);
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0]
     if (file) {
       setVideoFile(file)
       setVideoUrl(URL.createObjectURL(file))
+    }
+  }
+
+  // Helper to convert file to Base64
+  const fileToGenerativePart = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result.split(',')[1];
+        resolve({
+          inlineData: {
+            data: base64String,
+            mimeType: file.type
+          }
+        });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const analyzeVideo = async () => {
+    if (!videoFile) return;
+    
+    setIsAnalyzing(true)
+    setAiInsights(null)
+
+    try {
+      // 1. Prepare the video data
+      const videoPart = await fileToGenerativePart(videoFile);
+
+      // 2. Prepare the prompt
+      const prompt = `
+        This is a video that needs to be perfectly recreated. Analyze the video and provide the exact timing, 
+        transition names, effect details, and any presets applied (like color grading). 
+        I need this data to make a same-to-same version of this video.
+
+        Return the result STRICTLY as a JSON array of objects with the following keys:
+        "time" (e.g., "00:05"), "type" (cut, transition, effect, or preset), and "label" (detailed name).
+      `;
+
+      // 3. Initialize the AI with the requested Gemini 3 Flash Preview model
+      const ai = new GoogleGenAI(API_KEY);
+      const model = ai.getGenerativeModel({ model: "gemini-3-flash-preview" });
+
+      // Prepare the contents array as per your requested structure
+      const contents = [
+        videoPart,
+        { text: prompt }
+      ];
+
+      const result = await model.generateContent(contents);
+      const response = await result.response;
+      const textResponse = await response.text();
+      
+      // Extract and parse the JSON response
+      const jsonString = textResponse.replace(/```json|```/g, '').trim();
+      const insights = JSON.parse(jsonString);
+
+      setAiInsights(insights);
+    } catch (error) {
+      console.error("Error analyzing video:", error);
+      alert("AI Analysis failed. See console for details.");
+    } finally {
+      setIsAnalyzing(false)
     }
   }
 
@@ -54,9 +125,40 @@ function App() {
             <div className="sidebar">
               <h3>AI Assistant</h3>
               <div className="sidebar-content">
-                <p className="status">Ready to analyze video structure...</p>
-                <button className="action-btn">Analyze Video (AI)</button>
-                <div className="result-placeholder">Analysis results will appear here</div>
+                {!aiInsights && !isAnalyzing && (
+                  <>
+                    <p className="status" style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                      Ready to analyze video structure, transitions, and effects.
+                    </p>
+                    <button className="action-btn" onClick={analyzeVideo}>Analyze Video (AI)</button>
+                  </>
+                )}
+                
+                {isAnalyzing && (
+                  <div className="result-placeholder">
+                    <div className="spinner">✨</div>
+                    <p>Agent is watching video...</p>
+                  </div>
+                )}
+
+                {aiInsights && (
+                  <div className="insights-list" style={{ marginTop: '20px' }}>
+                    <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem' }}>Analysis Results:</h4>
+                    {aiInsights.map((insight, index) => (
+                      <div key={index} style={{ 
+                        background: 'rgba(255,255,255,0.05)', 
+                        padding: '10px', 
+                        marginBottom: '8px', 
+                        borderRadius: '4px',
+                        borderLeft: `3px solid ${insight.type === 'transition' ? '#aa3bff' : '#646cff'}`
+                      }}>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block' }}>{insight.time}</span>
+                        <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>{insight.label}</span>
+                      </div>
+                    ))}
+                    <button className="action-btn" style={{ marginTop: '20px', background: '#2a2a2a' }}>Apply All Suggestions</button>
+                  </div>
+                )}
               </div>
             </div>
 
