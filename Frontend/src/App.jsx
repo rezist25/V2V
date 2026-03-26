@@ -3,8 +3,8 @@ import { GoogleGenerativeAI as GoogleGenAI } from "@google/generative-ai"
 import './App.css'
 
 function App() {
-  // WARNING: In a production app, never store API keys in the frontend code.
-  const API_KEY = "AIzaSyCrnZjxBdfeJWjmahxrSmmV893_XZqui2Y";
+  // Access the API key from environment variables
+  const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
